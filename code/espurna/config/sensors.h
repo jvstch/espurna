@@ -256,6 +256,31 @@
 #endif
 
 //------------------------------------------------------------------------------
+// BL6523GX based watt meter 
+// Enable support by passing BL6523GX_SUPPORT=1 build flag
+//------------------------------------------------------------------------------
+
+#ifndef BL6523GX_SUPPORT
+#define BL6523GX_SUPPORT                 0
+#endif
+
+#ifndef BL6523GX_TX_PIN
+#define BL6523GX_TX_PIN                  4      // TX pin connected to the BL6523GX
+                                               // We never transmit anything, just sniff
+#endif
+
+#ifndef BL6523GX_RX_PIN
+#define BL6523GX_RX_PIN                  5      // RX pin connected to the BL6523GX
+                                               // We never transmit anything, just sniff
+#endif
+
+#define BL6523GX_SYNC_INTERVAL           250     // Safe time between transmissions (ms)
+#define BL6523GX_BAUDRATE                4800    // UART baudrate
+
+#define CSE7766_V1R                     1.0     // 1mR current resistor
+#define CSE7766_V2R                     1.0     // 1M voltage resistor
+
+//------------------------------------------------------------------------------
 // CSE7766 based power sensor
 // Enable support by passing CSE7766_SUPPORT=1 build flag
 //------------------------------------------------------------------------------
@@ -1344,6 +1369,34 @@
 #define BME680_STATE_SAVE_INTERVAL                  0                                      // How frequently (in milliseconds) should state be stored in
 #endif                                                                                     // non-volatile memory. A common value would be every 6h or
                                                                                            // 360 * 60 * 1000 milliseconds. By default, this is disabled.
+//------------------------------------------------------------------------------
+// BL6523GX based power sensor
+// Enable support by passing BL6523GX_SUPPORT=1 build flag
+//------------------------------------------------------------------------------
+
+#ifndef BL6523GX_SUPPORT
+#define BL6523GX_SUPPORT                 0
+#endif
+
+#ifndef BL6523GX_TX_PIN
+#define BL6523GX_TX_PIN                  4      // TX pin connected to the BL6523GX
+                                               // We never transmit anything, just sniffing
+#endif
+
+#ifndef BL6523GX_RX_PIN
+#define BL6523GX_RX_PIN                  5      // RX pin connected to the BL6523GX
+                                               // We never transmit anything, just sniffing
+#endif
+
+#ifndef BL6523GX_PIN_INVERSE
+#define BL6523GX_PIN_INVERSE             0       // Signal is inverted
+#endif
+
+#define BL6523GX_SYNC_INTERVAL           300     // Safe time between transmissions (ms)
+#define CSE7766_BAUDRATE                4800    // UART baudrate
+
+#define BL6523GX_V1R                     1.0     // 1mR current resistor
+#define BL6523GX_V2R                     1.0     // 1M voltage resistor
 
 // -----------------------------------------------------------------------------
 // ADC
@@ -1472,7 +1525,8 @@
     VEML6075_SUPPORT || \
     VL53L1X_SUPPORT || \
     HDC1080_SUPPORT || \
-    PZEM004TV30_SUPPORT \
+    PZEM004TV30_SUPPORT || \
+    BL6523GX_SUPPORT \
 )
 #endif
 

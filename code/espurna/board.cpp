@@ -261,6 +261,9 @@ const char* getEspurnaSensors() {
 #if BH1750_SUPPORT
     "BH1750 "
 #endif
+#if BL6523GX_SUPPORT
+    "BL6523GX "
+#endif
 #if BMP180_SUPPORT
     "BMP180 "
 #endif

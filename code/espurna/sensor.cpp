@@ -60,6 +60,10 @@ namespace {
     #include "sensors/BH1750Sensor.h"
 #endif
 
+#if BL6523GX_SUPPORT
+    #include "sensors/BL6523GXSensor.h"
+#endif
+
 #if BMP180_SUPPORT
     #include "sensors/BMP180Sensor.h"
 #endif
@@ -2103,6 +2107,11 @@ void _sensorWebSocketOnVisible(JsonObject& root) {
         }
 
         switch (sensor->getID()) {
+#if BL6523GX_SUPPORT
+        case SENSOR_BL6523GX_ID:
+            wsPayloadModule(root, "bl6");
+            break;
+#endif            
 #if HLW8012_SUPPORT
         case SENSOR_HLW8012_ID:
             wsPayloadModule(root, "hlw");
@@ -2498,6 +2507,15 @@ void _sensorLoad() {
         BH1750Sensor * sensor = new BH1750Sensor();
         sensor->setAddress(BH1750_ADDRESS);
         sensor->setMode(BH1750_MODE);
+        _sensors.push_back(sensor);
+    }
+    #endif
+
+    #if BL6523GX_SUPPORT
+    {
+        BL6523GXSensor * sensor = new BL6523GXSensor();
+        sensor->setRX(BL6523GX_TX_PIN); // We are sniffing on both RX and TX
+        sensor->setRX(BL6523GX_RX_PIN);  //    So setRX for both
         _sensors.push_back(sensor);
     }
     #endif

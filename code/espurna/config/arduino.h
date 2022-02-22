@@ -232,6 +232,7 @@
 //#define AM2320_SUPPORT         1
 //#define ANALOG_SUPPORT         1
 //#define BH1750_SUPPORT         1
+//#define BL6523GX_SUPPORT       1
 //#define BMP180_SUPPORT         1
 //#define BMX280_SUPPORT         1
 //#define BME680_SUPPORT         1

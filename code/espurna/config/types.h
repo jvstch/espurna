@@ -326,6 +326,7 @@
 #define SENSOR_PZEM004TV30_ID       41
 #define SENSOR_BME680_ID            42
 #define SENSOR_SM300D2_ID           43
+#define SENSOR_BL6523GX_ID          44
 
 //--------------------------------------------------------------------------------
 // Magnitudes
