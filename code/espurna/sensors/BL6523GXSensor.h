@@ -51,6 +51,24 @@
 
 #include <SoftwareSerial.h>
 
+#define BL6523_RX_DATASET_SIZE 2
+#define BL6523_TX_DATASET_SIZE 4
+#define BL6523_REG_AMPS 0x05
+#define BL6523_REG_VOLTS 0x07
+#define BL6523_REG_FREQ  0x09
+#define BL6523_REG_WATTS 0x0A
+#define BL6523_REG_POWF  0x08
+#define BL6523_REG_WATTHR 0x0C
+
+#define SINGLE_PHASE 0
+#define RX_WAIT 100
+
+#define BL6523_IREF 297899
+#define BL6523_UREF 13304
+#define BL6523_FREF 3907
+#define BL6523_PREF 707
+#define BL6523_PWHRREF_D 33 // Substract this from BL6523_PREF to get WattHr Div.
+
 class BL6523GXSensor : public BaseEmonSensor {
 
     public:
@@ -81,9 +99,20 @@ class BL6523GXSensor : public BaseEmonSensor {
             _dirty = true;
         }
 
-        void setInverted(bool inverted) {
-            if (_inverted == inverted) return;
-            _inverted = inverted;
+        void setInvertedRX(bool inverted_rx) {
+            if (_inverted_rx == inverted_rx) return;
+            _inverted_rx = inverted_rx;
+            _dirty = true;
+        }
+        void setTX(unsigned char pin_tx) {
+            if (_pin_tx == pin_tx) return;
+            _pin_tx = pin_tx;
+            _dirty = true;
+        }
+
+        void setInvertedTX(bool inverted_tx) {
+            if (_inverted_tx == inverted_tx) return;
+            _inverted_tx = inverted_tx;
             _dirty = true;
         }
 
@@ -93,8 +122,16 @@ class BL6523GXSensor : public BaseEmonSensor {
             return _pin_rx;
         }
 
-        bool getInverted() {
-            return _inverted;
+        bool getInvertedRX() {
+            return _inverted_rx;
+        }
+
+        unsigned char getTX() {
+            return _pin_tx;
+        }
+
+        bool getInvertedTX() {
+            return _inverted_tx;
         }
 
         // ---------------------------------------------------------------------
@@ -175,10 +212,10 @@ class BL6523GXSensor : public BaseEmonSensor {
         // Descriptive name of the sensor
         String description() {
             char buffer[28];
-            if (_serial_is_hardware()) {
-                snprintf(buffer, sizeof(buffer), "BL6523GX @ HwSerial");
+            if (_serial_tx_is_hardware()) {
+                snprintf(buffer, sizeof(buffer), "BL6523GX TX @ HwSerial");
             } else {
-                snprintf(buffer, sizeof(buffer), "BL6523GX @ SwSerial(%u,%u,NULL)", _pin_rx, _pin_tx);
+                snprintf(buffer, sizeof(buffer), "BL6523GX TX @ SwSerial(%u,%u,NULL)", _pin_rx, _pin_tx);
             }
             return String(buffer);
         }
@@ -215,7 +252,7 @@ class BL6523GXSensor : public BaseEmonSensor {
             if (index == 3) return _reactive;
             if (index == 4) return _voltage * _current;
             if (index == 5) return ((_voltage > 0) && (_current > 0)) ? 100 * _active / _voltage / _current : 100;
-            if (index == 6) return _energy[0].asDouble();
+            if (index == 6) return _energy;
             return 0;
         }
 
@@ -225,117 +262,13 @@ class BL6523GXSensor : public BaseEmonSensor {
         // Protected
         // ---------------------------------------------------------------------
 
-      
-        void _process() {
 
-            // Sample data:
-            // 55 5A 02 E9 50 00 03 31 00 3E 9E 00 0D 30 4F 44 F8 00 12 65 F1 81 76 72 (w/ load)
-            // F2 5A 02 E9 50 00 03 2B 00 3E 9E 02 D7 7C 4F 44 F8 CF A5 5D E1 B3 2A B4 (w/o load)
-
-            #if SENSOR_DEBUG
-                DEBUG_MSG("[SENSOR] BL6523GX: _process: ");
-                for (byte i=0; i<24; i++) DEBUG_MSG("%02X ", _data[i]);
-                DEBUG_MSG("\n");
-            #endif
-
-            // Checksum
-            if (!_checksum()) {
-                _error = SENSOR_ERROR_CRC;
-                #if SENSOR_DEBUG
-                    DEBUG_MSG("[SENSOR] BL6523GX: Checksum error\n");
-                #endif
-                return;
-            }
-
-            // Calibration
-            if (0xAA == _data[0]) {
-                _error = SENSOR_ERROR_CALIBRATION;
-                #if SENSOR_DEBUG
-                    DEBUG_MSG("[SENSOR] BL6523GX: Chip not calibrated\n");
-                #endif
-                return;
-            }
-
-            if ((_data[0] & 0xFC) > 0xF0) {
-                _error = SENSOR_ERROR_OTHER;
-                #if SENSOR_DEBUG
-                    if (0xF1 == (_data[0] & 0xF1)) DEBUG_MSG_P(PSTR("[SENSOR] BL6523GX: Abnormal coefficient storage area\n"));
-                    if (0xF2 == (_data[0] & 0xF2)) DEBUG_MSG_P(PSTR("[SENSOR] BL6523GX: Power cycle exceeded range\n"));
-                    if (0xF4 == (_data[0] & 0xF4)) DEBUG_MSG_P(PSTR("[SENSOR] BL6523GX: Current cycle exceeded range\n"));
-                    if (0xF8 == (_data[0] & 0xF8)) DEBUG_MSG_P(PSTR("[SENSOR] BL6523GX: Voltage cycle exceeded range\n"));
-                #endif
-                return;
-            }
-
-            // Calibration coefficients
-            unsigned long _coefV = (_data[2]  << 16 | _data[3]  << 8 | _data[4] );              // 190770
-            unsigned long _coefC = (_data[8]  << 16 | _data[9]  << 8 | _data[10]);              // 16030
-            unsigned long _coefP = (_data[14] << 16 | _data[15] << 8 | _data[16]);              // 5195000
-
-            // Adj: this looks like a sampling report
-            uint8_t adj = _data[20];                                                            // F1 11110001
-
-            // Calculate voltage
-            _voltage = 0;
-            if ((adj & 0x40) == 0x40) {
-                unsigned long voltage_cycle = _data[5] << 16 | _data[6] << 8 | _data[7];        // 817
-                _voltage = _voltage_ratio * _coefV / voltage_cycle / BL6523GX_V2R;                      // 190700 / 817 = 233.41
-            }
-
-            // Calculate power
-            _active = 0;
-            if ((adj & 0x10) == 0x10) {
-                if ((_data[0] & 0xF2) != 0xF2) {
-                    unsigned long power_cycle = _data[17] << 16 | _data[18] << 8 | _data[19];   // 4709
-                    _active = _power_active_ratio * _coefP / power_cycle / BL6523GX_V1R / BL6523GX_V2R;       // 5195000 / 4709 = 1103.20
-                }
-            }
-
-            // Calculate current
-            _current = 0;
-            if ((adj & 0x20) == 0x20) {
-                if (_active > 0) {
-                    unsigned long current_cycle = _data[11] << 16 | _data[12] << 8 | _data[13]; // 3376
-                    _current = _current_ratio * _coefC / current_cycle / BL6523GX_V1R;                  // 16030 / 3376 = 4.75
-                }
-            }
-
-            // Calculate reactive power
-            _reactive = 0;
-            unsigned int active = _active;
-            unsigned int apparent = _voltage * _current;
-            if (apparent > active) {
-                _reactive = sqrt(apparent * apparent - active * active);
-            } else {
-                _reactive = 0;
-            }
-
-            // Calculate energy
-            uint32_t cf_pulses = _data[21] << 8 | _data[22];
-
-            static uint32_t cf_pulses_last = 0;
-            if (0 == cf_pulses_last) cf_pulses_last = cf_pulses;
-
-            uint32_t difference;
-            if (cf_pulses < cf_pulses_last) {
-                difference = cf_pulses + (0xFFFF - cf_pulses_last) + 1;
-            } else {
-                difference = cf_pulses - cf_pulses_last;
-            }
-
-            _energy[0] += sensor::Ws {
-                static_cast<uint32_t>(difference * (float) _coefP / 1000000.0)
-            };
-            cf_pulses_last = cf_pulses;
-
-        }
-
-        void _read() {
+        bool _read() {
 
             _error = SENSOR_ERROR_OK;
 
-            static unsigned char index = 0;
-            static unsigned long last = millis();
+            //static unsigned char index = 0;
+            //static unsigned long last = millis();
             uint32_t powf_word = 0, powf_buf = 0, i = 0;
             float powf = 0.0f;
 
@@ -364,7 +297,7 @@ class BL6523GXSensor : public BaseEmonSensor {
             _serial_rx_readbytes(rx_buffer, BL6523_RX_DATASET_SIZE);
             _serial_rx_flush(); // Make room for another burst
 
-            AddLogBuffer(LOG_LEVEL_DEBUG_MORE, rx_buffer, BL6523_RX_DATASET_SIZE);
+            //DEBUG_MSG(LOG_LEVEL_DEBUG_MORE, rx_buffer, BL6523_RX_DATASET_SIZE);
             
             i=0;
             while (_serial_tx_available() < BL6523_TX_DATASET_SIZE)
@@ -424,16 +357,16 @@ class BL6523GXSensor : public BaseEmonSensor {
 
             switch(rx_buffer[1]) {
             case BL6523_REG_AMPS :
-                Energy.current[SINGLE_PHASE] =  (float)((tx_buffer[2] << 16) | (tx_buffer[1] << 8) | tx_buffer[0]) / Settings->energy_current_calibration;     // 1.260 A
+                _current =  (float)((tx_buffer[2] << 16) | (tx_buffer[1] << 8) | tx_buffer[0]) / BL6523_IREF;     // 1.260 A
                 break;
             case BL6523_REG_VOLTS :
-                Energy.voltage[SINGLE_PHASE] = (float)((tx_buffer[2] << 16) | (tx_buffer[1] << 8) | tx_buffer[0]) / Settings->energy_voltage_calibration;     // 230.2 V
+                _voltage = (float)((tx_buffer[2] << 16) | (tx_buffer[1] << 8) | tx_buffer[0]) / BL6523_UREF;     // 230.2 V
                 break;
             case BL6523_REG_FREQ :
-                Energy.frequency[SINGLE_PHASE] = (float)((tx_buffer[2] << 16) | (tx_buffer[1] << 8) | tx_buffer[0]) / Settings->energy_frequency_calibration;    // 50.0 Hz
+                _frequency = (float)((tx_buffer[2] << 16) | (tx_buffer[1] << 8) | tx_buffer[0]) / BL6523_FREF;    // 50.0 Hz
                 break;        
             case BL6523_REG_WATTS :
-                Energy.active_power[SINGLE_PHASE] = (float)((tx_buffer[2] << 16) | (tx_buffer[1] << 8) | tx_buffer[0]) / Settings->energy_power_calibration; // -196.3 W
+                _power_active = (float)((tx_buffer[2] << 16) | (tx_buffer[1] << 8) | tx_buffer[0]) / BL6523_PREF; // -196.3 W
                 break;
             case BL6523_REG_POWF :
             /* Power factor =(sign bit)*((PF[22]×2^－1）＋（PF[21]×2^－2）＋。。。)
@@ -447,30 +380,16 @@ class BL6523GXSensor : public BaseEmonSensor {
                 powf_word = powf_word & (0x7fffff >> (1+i));
             }
             powf = (powf_buf >> 23) ? (0.0f - (powf)) : powf; // Negate if sign bit(24) is set
-            Energy.power_factor[SINGLE_PHASE] = powf;
+            _power_factor = powf;
                 break;
             case BL6523_REG_WATTHR :
-                Energy.import_active[SINGLE_PHASE] = (float)((tx_buffer[2] << 16) | (tx_buffer[1] << 8) | tx_buffer[0]) / ( Settings->energy_power_calibration - BL6523_PWHRREF_D ); // 6.216 kWh => used in EnergyUpdateTotal()
+                _energy = (float)((tx_buffer[2] << 16) | (tx_buffer[1] << 8) | tx_buffer[0]) / ( BL6523_PREF - BL6523_PWHRREF_D ); // 6.216 kWh => used in EnergyUpdateTotal()
                 break;
             default :  
             break;            
             }
-            Energy.data_valid[SINGLE_PHASE] = 0;
-            EnergyUpdateTotal();
-            if (!Bl6523.discovery_triggered)
-            {
-                TasmotaGlobal.discovery_counter = 1; // force TasDiscovery()
-                Bl6523.discovery_triggered = true;
-            }
-            return true;
-            
-
-            // Process packet
-            if (24 == index) {
-                _process();
-                index = 0;
-            }
-
+            //Energy.data_valid[SINGLE_PHASE] = 0;
+            //EnergyUpdateTotal();
         }
 
         // ---------------------------------------------------------------------
@@ -511,11 +430,11 @@ class BL6523GXSensor : public BaseEmonSensor {
             }
         }
 
-         void _serial_tx_readbytes() {
+         size_t _serial_tx_readbytes(uint8_t *buffer, size_t num_bytes) {
             if (_serial_tx_is_hardware()) {
-                return Serial.readBytes();
+                return Serial.readBytes(buffer, num_bytes);
             } else {
-                return _serial_tx->readBytes();
+                return _serial_tx->readBytes(buffer, num_bytes);
             }
         }
 
@@ -554,11 +473,11 @@ class BL6523GXSensor : public BaseEmonSensor {
                 return _serial_rx->peek();
             }
         }
-         void _serial_rx_readbytes( ) {
+         size_t _serial_rx_readbytes( uint8_t *buffer, size_t num_bytes) {
             if (_serial_rx_is_hardware()) {
-                return Serial.readBytes();
+                return Serial.readBytes(buffer, num_bytes);
             } else {
-                return _serial_rx->readBytes();
+                return _serial_rx->readBytes(buffer, num_bytes);
             }
         }       
 
@@ -567,7 +486,7 @@ class BL6523GXSensor : public BaseEmonSensor {
         int _pin_rx = BL6523GX_RX_PIN;
         int _pin_tx = BL6523GX_TX_PIN;
         bool _inverted_rx = BL6523GX_RX_PIN_INVERSE;
-        bool _inverted_tx = BL6523GX_RX_PIN_INVERSE;
+        bool _inverted_tx = BL6523GX_TX_PIN_INVERSE;
         std::unique_ptr<SoftwareSerial> _serial_tx;
         std::unique_ptr<SoftwareSerial> _serial_rx;
 
@@ -575,6 +494,10 @@ class BL6523GXSensor : public BaseEmonSensor {
         double _reactive = 0;
         double _voltage = 0;
         double _current = 0;
+        double _power_active { 0.0 };
+        double _energy { 0.0 };
+        double _frequency { 0.0 };
+        double _power_factor { 0.0 };
 
         unsigned char _data[24] {0};
 

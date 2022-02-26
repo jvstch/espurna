@@ -1707,8 +1707,9 @@
     // BL6523GX
     #define BL6523GX_SUPPORT    1
     #define BL6523GX_TX_PIN     4
-    #define BL6523GX_TX_PIN     5
-
+    #define BL6523GX_RX_PIN     5
+    #define BL6523GX_TX_PIN_INVERSE 0
+    #define BL6523GX_RX_PIN_INVERSE 0
 // -----------------------------------------------------------------------------
 // V9261F
 // -----------------------------------------------------------------------------

@@ -1388,15 +1388,15 @@
                                                // We never transmit anything, just sniffing
 #endif
 
-#ifndef BL6523GX_PIN_INVERSE
-#define BL6523GX_PIN_INVERSE             0       // Signal is inverted
+#ifndef BL6523GX_TX_PIN_INVERSE
+#define BL6523GX_TX_PIN_INVERSE             0       // Signal is inverted
+#endif
+
+#ifndef BL6523GX_RX_PIN_INVERSE
+#define BL6523GX_RX_PIN_INVERSE             0       // Signal is inverted
 #endif
 
 #define BL6523GX_SYNC_INTERVAL           300     // Safe time between transmissions (ms)
-#define CSE7766_BAUDRATE                4800    // UART baudrate
-
-#define BL6523GX_V1R                     1.0     // 1mR current resistor
-#define BL6523GX_V2R                     1.0     // 1M voltage resistor
 
 // -----------------------------------------------------------------------------
 // ADC
